@@ -1,5 +1,6 @@
 import QtQuick 2.15
 import QtQuick.Window 2.15
+import QtQuick.Controls 2.15
 
 Window {
     visible: true
@@ -8,7 +9,7 @@ Window {
     height: Screen.desktopAvailableHeight
     visibility: "Maximized"
     minimumWidth: 600
-    minimumHeight: 480
+    minimumHeight: 320
     Timeline {
         anchors {
             bottom: parent.bottom

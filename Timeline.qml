@@ -7,6 +7,7 @@ Rectangle {
     property var graduation_step: 10;
     property var distance_between_gtitle: 80;
     property var start_timestamp: new Date().getTime() - (new Date().getHours() + new Date().getMinutes()/60)*60*60*1000;
+    property var zoom: 24;
     height: 149
     color: "#15161A"
     Item {
@@ -26,6 +27,17 @@ Rectangle {
                 topMargin: 35
             }
             height: 20
+            Timer {
+                id: timer
+                interval: 25
+                repeat: false
+                running: false
+                triggeredOnStart: false
+//                onTriggered: {
+//                    root.moveSpeed.z = 0
+//                }
+            }
+
             MouseArea {
                 id: timelineHover
                 anchors{
@@ -35,11 +47,65 @@ Rectangle {
                 }
                 height: parent.height + 40
                 hoverEnabled: true
+                onExited: {
+                    timelineCanvas.clearCanvas()
+                    init()
+                }
+
+                onPositionChanged: {
+                    if(!timer.running) {
+                        timer.start()
+                        var px_per_ms = timelineContainer.width / (hours_format * 60 * 60 * 1000); // px/ms
+                        let ctx = timelineCanvas.getContext("2d")
+                        timelineCanvas.clearCanvas()
+                        var time = start_timestamp + mouseX/px_per_ms;
+                        init(start_timestamp);
+                        drawLine(mouseX,timelineContainer.y - 10,mouseX,timelineContainer.y + 50,"rgb(194, 202, 215)",1);
+                        ctx.fillStyle = "rgb(194, 202, 215)";
+                        ctx.fillText(getTimeUnderCursor(time),mouseX - 20,timelineContainer.y + 61);
+                    }
+                }
+
+                onWheel: {
+                    wheel.accepted=true
+                    var middle_time = start_timestamp + (hours_format*3600*1000)/2;
+                    if(wheel.angleDelta.y > 0) {
+                        if(zoom > 4) {
+                            zoom = zoom - 4
+                        } else if(zoom < 0.1) {
+                            zoom = 0.05
+                        }  else {
+                            zoom = zoom - 0.4
+                        }
+
+                        hours_format = zoom;
+                    } else if (wheel.angleDelta.y < 0) {
+                        if (zoom >= 24) {
+                            zoom = 24;
+                        } else if(zoom > 4) {
+                            zoom = zoom + 4
+                        } else {
+                            zoom = zoom + 0.4
+                        }
+
+                        hours_format = zoom;
+                    }
+                    let ctx = timelineCanvas.getContext("2d")
+                    timelineCanvas.clearCanvas()
+                    start_timestamp = middle_time - (hours_format*3600*1000)/2;
+                    init()
+                }
             }
         }
         Canvas {
             id: timelineCanvas
             anchors.fill: parent
+            function clearCanvas() {
+                var ctx = getContext("2d");
+                ctx.reset();
+                timelineCanvas.requestPaint();
+            }
+
             onPaint: {
 //                var ctx = getContext("2d")
                 // setup your path
@@ -53,6 +119,40 @@ Rectangle {
             }
         }
     }
+    function getTimeUnderCursor(time) {
+        return new Date(time).toLocaleTimeString()
+    }
+
+    function draw_cell(){
+        var px_per_ms = timelineCanvas.width / (hours_format * 60 * 60 * 1000); // px/ms
+        var beginTime = new Date()
+        beginTime.setHours(0,0,0)
+        beginTime.setMilliseconds(0)
+        let ctx = timelineCanvas.getContext("2d")
+        for(var i = 0; i < 2000; ++i) {
+            var endTime = beginTime
+            endTime = new Date(beginTime.getTime() + 20000)
+            var beginX = (beginTime - start_timestamp) * px_per_ms;
+            var cell_width = (endTime.getTime() - beginTime.getTime()) * px_per_ms;
+            ctx.fillStyle = 'red'
+            ctx.strokeStyle = "blue"
+            //console.log(cell_width, endTime.getTime(), beginTime.getTime(), beginTime.getSeconds()+20)
+            ctx.fillRect(beginX,timelineContainer.y,cell_width,timelineContainer.height);
+            beginTime = new Date(beginTime.getTime() + 30000)
+            //console.log(Math.round(beginX),timelineContainer.y,cell_width,timelineContainer.height)
+        }
+
+
+    }
+
+    function init() {
+        drawTopLane()
+        drawBottomLane()
+        fillRect()
+        add_graduations(start_timestamp)
+        draw_cell()
+    }
+
     function fillRect() {
         let cx = timelineCanvas.getContext("2d")
         cx.fillStyle = '#1E2024'
@@ -90,14 +190,22 @@ Rectangle {
         ctx.stroke();
     }
 
-    function add_graduations(start_timestamp){
-        let ctx = timelineCanvas.getContext("2d")
-        var px_per_min = timelineContainer.width / (hours_format * 60); // px/min
-        var px_per_ms = timelineContainer.width / (hours_format * 60 * 60 * 1000); // px/ms
-        var px_per_step = graduation_step;  // px/格 默认最小值20px
-        var min_per_step = px_per_step / px_per_min; // min/格
-        for(var i = 0; i < minutes_per_step.length;i++){
-            if(min_per_step <= minutes_per_step[i]){ //让每格时间在minutes_per_step规定的范围内
+    function getPixelsPerMinute() {
+      return timelineContainer.width / (hours_format * 60);
+    }
+
+    function getPixelsPerMillisecond() {
+       return timelineContainer.width / (hours_format * 60 * 60 * 1000);
+    }
+
+    function add_graduations(start_timestamp = new Date().getTime() - (new Date().getHours() + new Date().getMinutes()/60)*60*60*1000){
+        const ctx = timelineCanvas.getContext("2d")
+        const px_per_min = getPixelsPerMinute()
+        const px_per_ms = getPixelsPerMillisecond()
+        let px_per_step = graduation_step;
+        let min_per_step = px_per_step / px_per_min;
+        for(var i = 0; i < minutes_per_step.length;++i){
+            if(min_per_step <= minutes_per_step[i]){
                 min_per_step = minutes_per_step[i];
                 px_per_step = px_per_min * min_per_step;
                 break
@@ -105,43 +213,43 @@ Rectangle {
         }
 
         var medium_step = 30;
-        for (var i = 0; i < minutes_per_step.length; i++) {
-            if (distance_between_gtitle / px_per_min <= minutes_per_step[i]) {
-                medium_step = minutes_per_step[i];
+        for (let j = 0; j < minutes_per_step.length; ++j) {
+            if (distance_between_gtitle / px_per_min <= minutes_per_step[j]) {
+                medium_step = minutes_per_step[j];
                 break;
             }
         }
 
-        var num_steps = timelineContainer.width / px_per_step; //总格数
+        const num_steps = timelineContainer.width / px_per_step;
         var graduation_left;
         var graduation_time;
         var caret_class;
-        var lineH;
-        var ms_offset = ms_to_next_step(start_timestamp,min_per_step*60*1000);//开始的偏移时间 ms
-        var px_offset = ms_offset * px_per_ms; //开始的偏移距离 px
-        var ms_per_step = px_per_step / px_per_ms; // ms/step
-        for(var i = 0; i < num_steps; ++i){
-            graduation_left = px_offset + i * px_per_step; // 距离=开始的偏移距离+格数*px/格
-            graduation_time = start_timestamp + ms_offset + i * ms_per_step; //时间=左侧开始时间+偏移时间+格数*ms/格
+        var heightOfLine;
+        const ms_offset = ms_to_next_step(start_timestamp,min_per_step*60*1000);
+        const px_offset = ms_offset * px_per_ms;
+        const ms_per_step = px_per_step / px_per_ms;
+        for(let i = 0; i < num_steps; ++i){
+            graduation_left = px_offset + i * px_per_step;
+            graduation_time = start_timestamp + ms_offset + i * ms_per_step;
             var date = new Date(graduation_time);
             if (date.getUTCHours() == 0 && date.getUTCMinutes() == 0) {
                 caret_class = 'big';
-                lineH = 8;
+                heightOfLine = 8;
                 var big_date = graduation_title(date);
-                ctx.fillText(big_date,graduation_left-20,timelineContainer.y +timelineContainer.height + 20 + lineH);
                 ctx.fillStyle = "#E8E8E8";
+                ctx.fillText(big_date,graduation_left-15,timelineContainer.y +timelineContainer.height + 20 + heightOfLine);
             }else if (graduation_time / (60 * 1000) % medium_step == 0) {
                 caret_class = 'middle';
-                lineH = 8;
-                var middle_date = graduation_title(date);
+                heightOfLine = 8;
+                const middle_date = graduation_title(date);
                 ctx.font = 'normal 11px sans-serif';
-                ctx.fillText(middle_date,graduation_left-15,timelineContainer.y +timelineContainer.height + 20 + lineH);
                 ctx.fillStyle = "#E8E8E8";
+                ctx.fillText(middle_date,graduation_left-15,timelineContainer.y + timelineContainer.height + 20 + heightOfLine);
+
             }else{
-                lineH = 3;
+                heightOfLine = 3;
             }
-            // drawLine(graduation_left,0,graduation_left,lineH,"rgba(151,158,167,0.4)",1);
-            drawLine(graduation_left,timelineContainer.y +timelineContainer.height + 10,graduation_left,timelineContainer.y +timelineContainer.height + 10 + lineH,"#3F434D",1);
+            drawLine(graduation_left,timelineContainer.y +timelineContainer.height + 10,graduation_left,timelineContainer.y +timelineContainer.height + 10 + heightOfLine,"#3F434D",1);
         }
     }
     function ms_to_next_step(timestamp, step) {
@@ -149,11 +257,11 @@ Rectangle {
         return remainder ? step - remainder : 0;
     }
     function graduation_title(datetime) {
-        if (datetime.getHours() == 0 && datetime.getMinutes() == 0 && datetime.getMilliseconds() == 0) {
-            return ('0' + datetime.getDate().toString()).substr(-2) + '.' +
-                ('0' + (datetime.getMonth() + 1).toString()).substr(-2) + '.' +
-                datetime.getFullYear();
-        }
+//        if (datetime.getHours() === 0 && datetime.getMinutes() === 0 && datetime.getMilliseconds() === 0) {
+//            return ('0' + datetime.getDate().toString()).substr(-2) + '.' +
+//                ('0' + (datetime.getMonth() + 1).toString()).substr(-2) + '.' +
+//                datetime.getFullYear();
+//        }
         return datetime.getHours() + ':' + ('0' + datetime.getMinutes().toString()).substr(-2);
     }
 }
