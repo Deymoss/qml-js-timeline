@@ -8,6 +8,7 @@ Rectangle {
     property var distance_between_gtitle: 80;
     property var start_timestamp: new Date().getTime() - (new Date().getHours() + new Date().getMinutes()/60)*60*60*1000;
     property var zoom: 24;
+    property int counter: 0
     height: 149
     color: "#15161A"
     Item {
@@ -17,6 +18,7 @@ Rectangle {
             left: parent.left
             right:parent.right
         }
+
         height: 97
         Item {
             id: timelineContainer
@@ -69,7 +71,15 @@ Rectangle {
                 onWheel: {
                     wheel.accepted=true
                     var middle_time = start_timestamp + (hours_format*3600*1000)/2;
-                    if(wheel.angleDelta.y > 0) {
+                    if(wheel.modifiers & Qt.AltModifier) {
+                        var diff_x = 0
+                        if(wheel.angleDelta.x > 0) {
+                            renderTime.start()
+                        } else {
+                            start_timestamp = start_timestamp - Math.round(diff_x / getPixelsPerMillisecond());
+                            renderTime.start()
+                        }
+                    } else if(wheel.angleDelta.y > 0) {
                         if(zoom > 4) {
                             zoom = zoom - 4
                         } else if(zoom < 0.1) {
@@ -77,7 +87,7 @@ Rectangle {
                         }  else {
                             zoom = zoom - 0.4
                         }
-
+                        start_timestamp = middle_time - (hours_format*3600*1000)/2;
                         hours_format = zoom;
                     } else if (wheel.angleDelta.y < 0) {
                         if (zoom >= 24) {
@@ -87,16 +97,33 @@ Rectangle {
                         } else {
                             zoom = zoom + 0.4
                         }
-
+                        start_timestamp = middle_time - (hours_format*3600*1000)/2;
                         hours_format = zoom;
                     }
-                    let ctx = timelineCanvas.getContext("2d")
-                    timelineCanvas.clearCanvas()
-                    start_timestamp = middle_time - (hours_format*3600*1000)/2;
-                    init()
+
+                   // console.log(start_timestamp)
+                    init(start_timestamp)
                 }
             }
         }
+
+        Timer {
+            id: renderTime
+            interval: 50
+            repeat: true
+            running: false
+            onTriggered: {
+                if(counter < 10){
+                    start_timestamp = start_timestamp + Math.round(diff_x / getPixelsPerMillisecond());
+                    init(start_timestamp)
+                //counter++
+                 } else {
+                    counter = 0
+                    renderTime.stop()
+                }
+            }
+        }
+
         Canvas {
             id: timelineCanvas
             anchors.fill: parent
@@ -146,6 +173,8 @@ Rectangle {
     }
 
     function init() {
+        let ctx = timelineCanvas.getContext("2d")
+        timelineCanvas.clearCanvas()
         drawTopLane()
         drawBottomLane()
         fillRect()
